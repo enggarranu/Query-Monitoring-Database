@@ -1,4 +1,4 @@
-# LOCKING MONITORING
+# LOCKING MONITORING POSTGRES
 
 ```
 SELECT blocked_locks.pid     AS blocked_pid,
