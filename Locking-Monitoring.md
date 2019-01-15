@@ -31,7 +31,7 @@ kalau memang ada query yang locking maka hasilnnya akan tampak seperti dibawah i
 ```
  blocked_pid | blocked_user | blocking_pid | blocking_user |             blocked_statement              | current_statement_in_blocking_process 
 -------------+--------------+--------------+---------------+--------------------------------------------+---------------------------------------
-       15798 | postgres     |        26544 | tokopedia     | drop index concurrently ws_shop_date_idx1; | select                               +
+       15798 | postgres     |        26544 | tokosidia     | drop index concurrently ws_shop_date_idx1; | select                               +
              |              |              |               |                                            | shop_id                              +
              |              |              |               |                                            | from ws_shop                         +
              |              |              |               |                                            | where lower(domain) = $1
