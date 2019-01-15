@@ -1,5 +1,3 @@
-# LOCKING MONITORING POSTGRES
-[a relative link](Locking-Monitoring.md)
+[Locking Monitoring Postgres](Locking-Monitoring.md)
 
-# MONITORING SIZE DATABASE OR TABLE 
-[a relative link](Monitoring-Size.md)
+[Monitoring Size Table and Databas](Monitoring-Size.md)
