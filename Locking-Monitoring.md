@@ -30,9 +30,9 @@ kalau memang ada query yang locking maka hasilnnya akan tampak seperti dibawah i
 ```
  blocked_pid | blocked_user | blocking_pid | blocking_user |             blocked_statement              | current_statement_in_blocking_process 
 -------------+--------------+--------------+---------------+--------------------------------------------+---------------------------------------
-       15798 | postgres     |        26544 | tokosidia     | drop index concurrently ws_shop_date_idx1; | select                               +
-             |              |              |               |                                            | shop_id                              +
-             |              |              |               |                                            | from ws_shop                         +
+       15798 | postgres     |        26544 | tokosidia     | drop index concurrently idx_tb_yang_diindex; | select                               +
+             |              |              |               |                                            | shopee_id                              +
+             |              |              |               |                                            | from ws_shoppee                         +
              |              |              |               |                                            | where lower(domain) = $1
 (1 row)
 ```
