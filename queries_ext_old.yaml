@@ -1,0 +1,467 @@
+pg_replication:
+  query: "SELECT EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp()))::INT AS lag, CASE WHEN pg_is_in_recovery() THEN 1 ELSE 0 END AS is_replica"
+  metrics:
+    - lag:
+        usage: "GAUGE"
+        description: "Replication lag behind master in seconds"
+    - is_replica:
+        usage: "GAUGE"
+        description: "Indicates if this host is a slave"
+
+# Note that upstream_host and slot_name labels will cause broken time
+# series which can be worked around using "ignoring" but it seems
+# better to have these labels and have to work around them than to
+# lose the data? 
+
+# Also in 9.6 and prior this view, like the pg_stat_statements view
+# below requires a hacky SECURITY DEFINER function to grant access to
+# the data inside AS they filter out data for non-superuser even if
+# you've granted access explicitly.
+
+pg_stat_wal_receiver:
+  query: |
+    SELECT case status when 'stopped' then 0 when 'starting' then 1 when 'streaming' then 2 when 'waiting' then 3 when 'restarting' then 4 when 'stopping' then 5 else -1 end AS status,
+           (receive_start_lsn- '0/0') % (2^52)::bigint AS receive_start_lsn,
+           receive_start_tli,
+           (received_lsn- '0/0') % (2^52)::bigint AS received_lsn,
+           received_tli,
+           extract(epoch FROM last_msg_send_time) AS last_msg_send_time,
+           extract(epoch FROM last_msg_receipt_time) AS last_msg_receipt_time,
+           (latest_end_lsn - '0/0') % (2^52)::bigint AS latest_end_lsn,
+           extract(epoch FROM latest_end_time) AS latest_end_time,
+           substring(slot_name FROM 'repmgr_slot_([0-9]*)') AS upstream_node,
+           substring(conninfo FROM 'host=([^ ]*)') AS upstream_host,
+           slot_name
+      FROM pg_stat_wal_receiver
+  metrics:
+    - status:
+        usage: "GAUGE"
+        description: "Activity status of the WAL receiver process (0=stopped 1=starting 2=streaming 3=waiting 4=restarting 5=stopping)"
+    - receive_start_lsn:
+        usage: "COUNTER"
+        description: "First transaction log position used when WAL receiver is started"
+    - receive_start_tli:
+        usage: "GAUGE"
+        description: "First timeline number used when WAL receiver is started"
+    - received_lsn:
+        usage: "COUNTER"
+        description: "Last transaction log position already received and flushed to disk, the initial value of this field being the first log position used when WAL receiver is started"
+    - received_tli:
+        usage: "GAUGE"
+        description: "Timeline number of last transaction log position received and flushed to disk, the initial value of this field being the timeline number of the first log position used when WAL receiver is started"
+    - last_msg_send_time:
+        usage: "COUNTER"
+        description: "Send time of last message received FROM origin WAL sender"
+    - last_msg_receipt_time:
+        usage: "COUNTER"
+        description: "Receipt time of last message received FROM origin WAL sender"
+    - latest_end_lsn:
+        usage: "COUNTER"
+        description: "Last transaction log position reported to origin WAL sender"
+    - latest_end_time:
+        usage: "COUNTER"
+        description: "Time of last transaction log position reported to origin WAL sender"
+    - upstream_node:
+        usage: "GAUGE"
+        description: "The repmgr node FROM the upstream slot name"
+    - upstream_host:
+        usage: "LABEL"
+        description: "The upstream host this node is replicating FROM"
+    - slot_name:
+        usage: "LABEL"
+        description: "The upstream slot_name this node is replicating FROM"
+
+pg_postmaster:
+  query: "SELECT pg_postmaster_start_time AS start_time_seconds FROM pg_postmaster_start_time()"
+  metrics:
+    - start_time_seconds:
+        usage: "GAUGE"
+        description: "Time at which postmaster started"
+
+pg_stat_user_tables:
+  query: "SELECT schemaname, relname, seq_scan, seq_tup_read, idx_scan, idx_tup_fetch, n_tup_ins, n_tup_upd, n_tup_del, n_tup_hot_upd, n_live_tup, n_dead_tup, n_mod_since_analyze, last_vacuum, last_autovacuum, last_analyze, last_autoanalyze, vacuum_count, autovacuum_count, analyze_count, autoanalyze_count FROM pg_stat_user_tables"
+  metrics:
+    - schemaname:
+        usage: "LABEL"
+        description: "Name of the schema that this table is in"
+    - relname:
+        usage: "LABEL"
+        description: "Name of this table"
+    - seq_scan:
+        usage: "COUNTER"
+        description: "Number of sequential scans initiated on this table"
+    - seq_tup_read:
+        usage: "COUNTER"
+        description: "Number of live rows fetched by sequential scans"
+    - idx_scan:
+        usage: "COUNTER"
+        description: "Number of index scans initiated on this table"
+    - idx_tup_fetch:
+        usage: "COUNTER"
+        description: "Number of live rows fetched by index scans"
+    - n_tup_ins:
+        usage: "COUNTER"
+        description: "Number of rows inserted"
+    - n_tup_upd:
+        usage: "COUNTER"
+        description: "Number of rows updated"
+    - n_tup_del:
+        usage: "COUNTER"
+        description: "Number of rows deleted"
+    - n_tup_hot_upd:
+        usage: "COUNTER"
+        description: "Number of rows HOT updated (i.e., with no separate index update required)"
+    - n_live_tup:
+        usage: "GAUGE"
+        description: "Estimated number of live rows"
+    - n_dead_tup:
+        usage: "GAUGE"
+        description: "Estimated number of dead rows"
+    - n_mod_since_analyze:
+        usage: "GAUGE"
+        description: "Estimated number of rows changed since last analyze"
+    - last_vacuum:
+        usage: "GAUGE"
+        description: "Last time at which this table was manually vacuumed (not counting VACUUM FULL)"
+    - last_autovacuum:
+        usage: "GAUGE"
+        description: "Last time at which this table was vacuumed by the autovacuum daemon"
+    - last_analyze:
+        usage: "GAUGE"
+        description: "Last time at which this table was manually analyzed"
+    - last_autoanalyze:
+        usage: "GAUGE"
+        description: "Last time at which this table was analyzed by the autovacuum daemon"
+    - vacuum_count:
+        usage: "COUNTER"
+        description: "Number of times this table has been manually vacuumed (not counting VACUUM FULL)"
+    - autovacuum_count:
+        usage: "COUNTER"
+        description: "Number of times this table has been vacuumed by the autovacuum daemon"
+    - analyze_count:
+        usage: "COUNTER"
+        description: "Number of times this table has been manually analyzed"
+    - autoanalyze_count:
+        usage: "COUNTER"
+        description: "Number of times this table has been analyzed by the autovacuum daemon"
+
+pg_statio_user_tables:
+  query: "SELECT schemaname, relname, heap_blks_read, heap_blks_hit, idx_blks_read, idx_blks_hit, toast_blks_read, toast_blks_hit, tidx_blks_read, tidx_blks_hit FROM pg_statio_user_tables"
+  metrics:
+    - schemaname:
+        usage: "LABEL"
+        description: "Name of the schema that this table is in"
+    - relname:
+        usage: "LABEL"
+        description: "Name of this table"
+    - heap_blks_read:
+        usage: "COUNTER"
+        description: "Number of disk blocks read FROM this table"
+    - heap_blks_hit:
+        usage: "COUNTER"
+        description: "Number of buffer hits in this table"
+    - idx_blks_read:
+        usage: "COUNTER"
+        description: "Number of disk blocks read FROM all indexes on this table"
+    - idx_blks_hit:
+        usage: "COUNTER"
+        description: "Number of buffer hits in all indexes on this table"
+    - toast_blks_read:
+        usage: "COUNTER"
+        description: "Number of disk blocks read FROM this table's TOAST table (if any)"
+    - toast_blks_hit:
+        usage: "COUNTER"
+        description: "Number of buffer hits in this table's TOAST table (if any)"
+    - tidx_blks_read:
+        usage: "COUNTER"
+        description: "Number of disk blocks read FROM this table's TOAST table indexes (if any)"
+    - tidx_blks_hit:
+        usage: "COUNTER"
+        description: "Number of buffer hits in this table's TOAST table indexes (if any)"
+
+pg_stat_statements:
+  query: |
+    SELECT
+      pg_get_userbyid(userid) AS user,
+      pg_database.datname,
+      pg_stat_statements.queryid,
+      pg_stat_statements.calls,
+      pg_stat_statements.total_time AS time_milliseconds,
+      pg_stat_statements.rows,
+      pg_stat_statements.shared_blks_hit,
+      pg_stat_statements.shared_blks_read,
+      pg_stat_statements.shared_blks_dirtied,
+      pg_stat_statements.shared_blks_written,
+      pg_stat_statements.local_blks_hit,
+      pg_stat_statements.local_blks_read,
+      pg_stat_statements.local_blks_dirtied,
+      pg_stat_statements.local_blks_written,
+      pg_stat_statements.temp_blks_read,
+      pg_stat_statements.temp_blks_written,
+      pg_stat_statements.blk_read_time,
+      pg_stat_statements.blk_write_time
+      FROM pg_stat_statements
+      JOIN pg_database
+        ON pg_database.oid = pg_stat_statements.dbid
+  metrics:
+    - user:
+        usage: "LABEL"
+        description: "The user who executed the statement"
+    - datname:
+        usage: "LABEL"
+        description: "The database in which the statement was executed"
+    - queryid:
+        usage: "LABEL"
+        description: "Internal hash code, computed FROM the statement's parse tree"
+    - calls:
+        usage: "COUNTER"
+        description: "Number of times executed"
+    - time_milliseconds:
+        usage: "COUNTER"
+        description: "Total time spent in the statement, in milliseconds"
+    - rows:
+        usage: "COUNTER"
+        description: "Total number of rows retrieved or affected by the statement"
+    - shared_blks_hit:
+        usage: "COUNTER"
+        description: "Total number of shared block cache hits by the statement"
+    - shared_blks_read:
+        usage: "COUNTER"
+        description: "Total number of shared blocks read by the statement"
+    - shared_blks_dirtied:
+        usage: "COUNTER"
+        description: "Total number of shared blocks dirtied by the statement"
+    - shared_blks_written:
+        usage: "COUNTER"
+        description: "Total number of shared blocks written by the statement"
+    - local_blks_hit:
+        usage: "COUNTER"
+        description: "Total number of local block cache hits by the statement"
+    - local_blks_read:
+        usage: "COUNTER"
+        description: "Total number of local blocks read by the statement"
+    - local_blks_dirtied:
+        usage: "COUNTER"
+        description: "Total number of local blocks dirtied by the statement"
+    - local_blks_written:
+        usage: "COUNTER"
+        description: "Total number of local blocks written by the statement"
+    - temp_blks_read:
+        usage: "COUNTER"
+        description: "Total number of temp blocks read by the statement"
+    - temp_blks_written:
+        usage: "COUNTER"
+        description: "Total number of temp blocks written by the statement"
+    - blk_read_time:
+        usage: "COUNTER"
+        description: "Total time the statement spent reading blocks, in milliseconds"
+    - blk_write_time:
+        usage: "COUNTER"
+        description: "Total time the statement spent writing blocks, in milliseconds"
+
+pg_total_relation_size:
+  query: |
+    SELECT relnamespace::regnamespace AS schemaname,
+           relname AS relname,
+           pg_total_relation_size(oid) bytes
+      FROM pg_class
+     WHERE relkind = 'r';
+  metrics:
+    - schemaname:
+        usage: "LABEL"
+        description: "Name of the schema that this table is in"
+    - relname:
+        usage: "LABEL"
+        description: "Name of this table"
+    - bytes:
+        usage: "GAUGE"
+        description: "total disk space usage for the specified table and associated indexes"
+
+pg_blocked:
+  query: |
+    SELECT
+      count(blocked.transactionid) AS queries,
+      '__transaction__' AS table
+    FROM pg_catalog.pg_locks blocked
+    WHERE NOT blocked.granted AND locktype = 'transactionid'
+    GROUP BY locktype
+    UNION
+    SELECT
+      count(blocked.relation) AS queries,
+      blocked.relation::regclass::text AS table
+    FROM pg_catalog.pg_locks blocked
+    WHERE NOT blocked.granted AND locktype != 'transactionid'
+    GROUP BY relation
+  metrics:
+    - queries:
+        usage: "GAUGE"
+        description: "The current number of blocked queries"
+    - table:
+        usage: "LABEL"
+        description: "The table on which a query is blocked"
+
+pg_oldest_blocked:
+  query: |
+    SELECT coalesce(extract('epoch' FROM max(clock_timestamp() - state_change)), 0) age_seconds
+      FROM pg_stat_activity
+     WHERE wait_event_type = 'Lock'
+       AND state='active'
+  metrics:
+    - age_seconds:
+        usage: "GAUGE"
+        description: "Largest number of seconds any transaction is currently waiting on a lock"
+
+pg_slow:
+  query: |
+    SELECT COUNT(*) AS queries
+    FROM pg_stat_activity
+    WHERE state = 'active' AND (now() - query_start) > '1 seconds'::interval
+  metrics:
+    - queries:
+        usage: "GAUGE"
+        description: "Current number of slow queries"
+
+pg_vacuum:
+  query: |
+    SELECT
+      COUNT(*) AS queries,
+      MAX(EXTRACT(EPOCH FROM (clock_timestamp() - query_start))) AS age_in_seconds
+    FROM pg_catalog.pg_stat_activity
+    WHERE state = 'active' AND trim(query) ~* '\AVACUUM (?!ANALYZE)'
+  metrics:
+    - queries:
+        usage: "GAUGE"
+        description: "The current number of VACUUM queries"
+    - age_in_seconds:
+        usage: "GAUGE"
+        description: "The current maximum VACUUM query age in seconds"
+
+pg_vacuum_analyze:
+  query: |
+    SELECT
+      COUNT(*) AS queries,
+      MAX(EXTRACT(EPOCH FROM (clock_timestamp() - query_start))) AS age_in_seconds
+    FROM pg_catalog.pg_stat_activity
+    WHERE state = 'active' AND trim(query) ~* '\AVACUUM ANALYZE'
+  metrics:
+    - queries:
+        usage: "GAUGE"
+        description: "The current number of VACUUM ANALYZE queries"
+    - age_in_seconds:
+        usage: "GAUGE"
+        description: "The current maximum VACUUM ANALYZE query age in seconds"
+
+pg_stuck_idle_in_transaction:
+  query: |
+    SELECT COUNT(*) AS queries
+    FROM pg_stat_activity
+    WHERE state = 'idle in transaction' AND (now() - query_start) > '10 minutes'::interval
+  metrics:
+    - queries:
+        usage: "GAUGE"
+        description: "Current number of queries that are stuck being idle in transactions"
+
+# All xid and lsn metrics here are reported mod 2^52 to ensure they
+# fit within a float for Prometheus :( Really annoying that counters
+# aren't stored in a 64-bit integer. Note that for queries that report
+# floats this only works because postgres_exporter does know to set
+# extra_float_digits (which it sets to 2). So they don't print in
+# exponential notation and precision is maintained up to 2^53-1.
+
+pg_txid:
+  query: |
+    SELECT
+      CASE WHEN pg_is_in_recovery() THEN 'NaN'::float ELSE txid_current() % (2^52)::bigint END AS current,
+      CASE WHEN pg_is_in_recovery() THEN 'NaN'::float ELSE txid_snapshot_xmin(txid_current_snapshot()) % (2^52)::bigint END AS xmin,
+      CASE WHEN pg_is_in_recovery() THEN 'NaN'::float ELSE txid_current() - txid_snapshot_xmin(txid_current_snapshot()) END AS xmin_age
+  metrics:
+    - current:
+        usage: "COUNTER"
+        description: "Current 64-bit transaction id of the query used to collect this metric (truncated to low 52 bits)"
+    - xmin:
+        usage: "COUNTER"
+        description: "Oldest transaction id of a transaction still in progress, i.e. not known committed or aborted (truncated to low 52 bits)"
+    - xmin_age:
+        usage: "GAUGE"
+        description: "Age of oldest transaction still not committed or aborted measured in transaction ids"
+
+pg_xlog_position:
+  query: |
+    SELECT CASE
+           WHEN pg_is_in_recovery()
+           THEN (pg_last_xlog_replay_location() - '0/0') % (2^52)::bigint
+           ELSE (pg_current_xlog_location() - '0/0') % (2^52)::bigint
+           END AS bytes
+  metrics:
+    - bytes:
+        usage: "COUNTER"
+        description: "Postgres LSN (log sequence number) being generated on primary or replayed on replica (truncated to low 52 bits)"
+
+# This should be pushed upstream. We really just want "active" so we
+# can monitor for orphaned slots causing xlog space usage to grow
+
+pg_replication_slots:
+  query: |
+    SELECT slot_name, slot_type,
+           case when active then 1.0 else 0.0 end AS active,
+           age(xmin) AS xmin_age,
+           age(catalog_xmin) AS catalog_xmin_age,
+           pg_current_xlog_location() - restart_lsn AS restart_lsn_bytes,
+           pg_current_xlog_location() - confirmed_flush_lsn AS confirmed_flush_lsn_bytes
+      FROM pg_replication_slots
+  metrics:
+    - slot_name:
+        usage: "LABEL"
+        description: "Slot Name"
+    - slot_type:
+        usage: "LABEL"
+        description: "Slot Type"
+    - active:
+        usage: "GAUGE"
+        description: "Boolean flag indicating whether this slot has a consumer streaming FROM it"
+    - xmin_age:
+        usage: "GAUGE"
+        description: "Age of oldest transaction that cannot be vacuumed due to this replica"
+    - catalog_xmin_age:
+        usage: "GAUGE"
+        description: "Age of oldest transaction that cannot be vacuumed FROM catalogs due to this replica (used by logical replication)"
+    - restart_lsn_bytes:
+        usage: "GAUGE"
+        description: "Amount of data on in xlog that must be this replica may need to complete recovery"
+    - confirmed_flush_lsn_bytes:
+        usage: "GAUGE"
+        description: "Amount of data on in xlog that must be this replica has not yet received"
+
+pg_logical_replication:
+  query: "SELECT database, CASE WHEN active='t' THEN 1 ELSE 0 END AS active_status FROM pg_replication_slots WHERE slot_type='logical'"
+  metrics:
+    - database:
+        usage: "LABEL"
+        description: "Database in replication"
+    - active_status:
+        usage: "GAUGE"
+        description: "Status logical replication"
+
+pg_settings_shared_buffers:
+  query: "SELECT 8192*(setting::int/1024) AS bytes FROM pg_settings WHERE name = 'shared_buffers'"
+  metrics:
+    - bytes:
+        usage: "GAUGE"
+        description: "Size of shared_buffers"
+
+pg_settings_checkpoint:
+  query: |
+    SELECT (SELECT setting::int FROM pg_settings WHERE name = 'checkpoint_segments') AS segments, 
+    (SELECT setting::int FROM pg_settings WHERE name = 'checkpoint_timeout') AS timeout_seconds, (SELECT setting::float FROM pg_settings 
+    WHERE name = 'checkpoint_completion_target') AS completion_target
+  metrics:
+    - segments:
+        usage: "GAUGE"
+        description: "Number of checkpoint segments"
+    - timeout_seconds:
+        usage: "GAUGE"
+        description: "Checkpoint timeout in seconds"
+    - completion_target:
+        usage: "GAUGE"
+        description: "Checkpoint completion target, ranging from 0 to 1"
+
